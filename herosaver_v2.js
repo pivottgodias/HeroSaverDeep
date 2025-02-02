@@ -24,30 +24,52 @@
         });
     }
 
-    // Substitui assets de baixa resolução por alta resolução
-    function upgradeAssets(scene) {
+    // Extrai URLs de arquivos .ckb da cena
+    function extractCkbUrls(scene) {
+        const ckbUrls = new Set();
+
         scene.traverse(object => {
             if (object.isMesh && object.geometry) {
                 const geometryUrl = object.geometry.userData.url; // Verifica se há URL associada
-                if (geometryUrl && geometryUrl.includes("loRez")) {
-                    const hiRezUrl = geometryUrl.replace("loRez", "hiRez");
-                    console.log(`Substituindo ${geometryUrl} por ${hiRezUrl}`);
-
-                    // Carrega a geometria de alta resolução
-                    fetch(hiRezUrl)
-                        .then(response => response.arrayBuffer())
-                        .then(data => {
-                            const loader = new THREE.BufferGeometryLoader();
-                            const hiRezGeometry = loader.parse(data);
-                            object.geometry = hiRezGeometry;
-                            console.log(`Geometria de alta resolução carregada: ${hiRezUrl}`);
-                        })
-                        .catch(error => {
-                            console.error(`Erro ao carregar geometria de alta resolução: ${hiRezUrl}`, error);
-                        });
+                if (geometryUrl && geometryUrl.endsWith(".ckb")) {
+                    ckbUrls.add(geometryUrl);
                 }
             }
         });
+
+        return Array.from(ckbUrls);
+    }
+
+    // Carrega um arquivo .ckb como geometria
+    async function loadCkbGeometry(url) {
+        try {
+            const response = await fetch(url);
+            const data = await response.arrayBuffer();
+            const loader = new THREE.BufferGeometryLoader();
+            const geometry = loader.parse(data);
+            geometry.userData.url = url; // Salva o URL para referência
+            return geometry;
+        } catch (error) {
+            console.error(`Erro ao carregar geometria de ${url}:`, error);
+            return null;
+        }
+    }
+
+    // Substitui geometrias da cena por versões carregadas de .ckb
+    async function upgradeSceneWithCkb(scene) {
+        const ckbUrls = extractCkbUrls(scene);
+
+        for (const url of ckbUrls) {
+            const geometry = await loadCkbGeometry(url);
+            if (geometry) {
+                scene.traverse(object => {
+                    if (object.isMesh && object.geometry.userData.url === url) {
+                        object.geometry = geometry; // Substitui a geometria
+                        console.log(`Geometria substituída: ${url}`);
+                    }
+                });
+            }
+        }
     }
 
     // Clona uma cena e aplica transformações
@@ -131,13 +153,13 @@
     }
 
     // Função principal para exportar modelos
-    window.exportHighQualityModel = function (format = "stl", fileName = "modelo") {
+    window.exportHighQualityModel = async function (format = "stl", fileName = "modelo") {
         if (!window.THREE) {
             console.error("Three.js não encontrado.");
             return;
         }
 
-        loadDependencies(() => {
+        loadDependencies(async () => {
             let scene = null;
 
             // Tenta encontrar a cena
@@ -153,8 +175,8 @@
                 return;
             }
 
-            // Substitui assets de baixa resolução por alta resolução
-            upgradeAssets(scene);
+            // Carrega e substitui geometrias de .ckb
+            await upgradeSceneWithCkb(scene);
 
             // Clona a cena e aplica transformações
             const clonedScene = cloneScene(scene);
