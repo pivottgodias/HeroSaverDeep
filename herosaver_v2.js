@@ -1,11 +1,9 @@
 (() => {
-    // Verifica se o script já foi carregado para evitar múltiplas execuções
     if (window.saveStl) {
         console.log("HeroSaver já carregado.");
         return;
     }
 
-    // Importa a biblioteca STLExporter do Three.js (se ainda não estiver carregada)
     function loadSTLExporter(callback) {
         if (window.THREE && window.THREE.STLExporter) {
             callback();
@@ -17,7 +15,23 @@
         }
     }
 
-    // Função para converter a cena Three.js para STL
+    function applyTransforms(object) {
+        object.updateMatrixWorld(true); // Atualiza todas as matrizes na cena
+
+        if (object.isMesh) {
+            object.geometry.applyMatrix4(object.matrixWorld); // Aplica posição, rotação e escala na geometria
+            object.matrix.identity(); // Reseta a matriz do objeto para evitar transformações duplas
+            object.position.set(0, 0, 0);
+            object.rotation.set(0, 0, 0);
+            object.scale.set(1, 1, 1);
+        }
+
+        // Se o objeto tem filhos, aplica as transformações recursivamente
+        if (object.children.length > 0) {
+            object.children.forEach(child => applyTransforms(child));
+        }
+    }
+
     window.saveStl = function (fileName = "modelo.stl") {
         if (!window.THREE) {
             console.error("Three.js não encontrado na página.");
@@ -25,7 +39,6 @@
         }
 
         loadSTLExporter(() => {
-            // Tenta encontrar a cena Three.js na página
             let scene = null;
             for (let key in window) {
                 if (window[key] && window[key] instanceof THREE.Scene) {
@@ -35,16 +48,17 @@
             }
 
             if (!scene) {
-                console.error("Cena Three.js não encontrada na página.");
+                console.error("Cena Three.js não encontrada.");
                 alert("Erro: Nenhuma cena Three.js foi detectada.");
                 return;
             }
 
-            // Exporta a geometria como STL
-            const exporter = new THREE.STLExporter();
-            const stlString = exporter.parse(scene);
+            const clonedScene = scene.clone(); // Evita modificar a cena original
+            clonedScene.traverse(applyTransforms); // Aplica transformações a todos os objetos
 
-            // Cria um link para download
+            const exporter = new THREE.STLExporter();
+            const stlString = exporter.parse(clonedScene);
+
             const blob = new Blob([stlString], { type: "model/stl" });
             const link = document.createElement("a");
             link.href = URL.createObjectURL(blob);
