@@ -38,7 +38,7 @@
         object.children?.forEach(child => applyTransforms(child));
     }
 
-    function improveMeshQuality(mesh, subdivisions = 2) {
+    function improveMeshQuality(mesh, subdivisions = 4) {
         if (!window.THREE.SubdivisionModifier) {
             console.warn("SubdivisionModifier não carregado. A qualidade não será melhorada.");
             return;
@@ -50,7 +50,7 @@
         mesh.geometry = geometry;
     }
 
-    window.saveStl = function (fileName = "modelo.stl", scene = null, subdivisions = 2) {
+    window.saveStl = function (fileName = "modelo.stl", scene = null, subdivisions = 4) {
         if (!window.THREE) {
             console.error("Three.js não encontrado.");
             return;
