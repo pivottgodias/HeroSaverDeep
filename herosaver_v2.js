@@ -24,6 +24,32 @@
         });
     }
 
+    // Substitui assets de baixa resolução por alta resolução
+    function upgradeAssets(scene) {
+        scene.traverse(object => {
+            if (object.isMesh && object.geometry) {
+                const geometryUrl = object.geometry.userData.url; // Verifica se há URL associada
+                if (geometryUrl && geometryUrl.includes("loRez")) {
+                    const hiRezUrl = geometryUrl.replace("loRez", "hiRez");
+                    console.log(`Substituindo ${geometryUrl} por ${hiRezUrl}`);
+
+                    // Carrega a geometria de alta resolução
+                    fetch(hiRezUrl)
+                        .then(response => response.arrayBuffer())
+                        .then(data => {
+                            const loader = new THREE.BufferGeometryLoader();
+                            const hiRezGeometry = loader.parse(data);
+                            object.geometry = hiRezGeometry;
+                            console.log(`Geometria de alta resolução carregada: ${hiRezUrl}`);
+                        })
+                        .catch(error => {
+                            console.error(`Erro ao carregar geometria de alta resolução: ${hiRezUrl}`, error);
+                        });
+                }
+            }
+        });
+    }
+
     // Clona uma cena e aplica transformações
     function cloneScene(scene) {
         const clonedScene = scene.clone();
@@ -126,6 +152,9 @@
                 console.error("Cena não encontrada.");
                 return;
             }
+
+            // Substitui assets de baixa resolução por alta resolução
+            upgradeAssets(scene);
 
             // Clona a cena e aplica transformações
             const clonedScene = cloneScene(scene);
