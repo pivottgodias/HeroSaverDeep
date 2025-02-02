@@ -1,80 +1,24 @@
-// Importações otimizadas do Three.js
-import { Scene, PerspectiveCamera, WebGLRenderer, Mesh, BoxGeometry, MeshStandardMaterial, DirectionalLight } from 'three';
-
-// Classe HeroSaver responsável por configurar a cena e renderizar
-class HeroSaver {
-    constructor(containerId) {
-        this.container = document.getElementById(containerId);
-        if (!this.container) {
-            console.error("Container não encontrado!");
-            return;
-        }
-
-        this.init();
-        this.animate();
+(() => {
+    // Verifica se já foi carregado para evitar múltiplas execuções
+    if (window.saveStl) {
+        console.log("HeroSaver já carregado.");
+        return;
     }
 
-    // Inicializa a cena 3D
-    init() {
-        // Criando cena
-        this.scene = new Scene();
+    // Função para baixar um arquivo STL
+    window.saveStl = function (stlUrl = "https://exemplo.com/modelo.stl", fileName = "modelo.stl") {
+        fetch(stlUrl)
+            .then(response => response.blob())
+            .then(blob => {
+                const link = document.createElement("a");
+                link.href = URL.createObjectURL(blob);
+                link.download = fileName;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            })
+            .catch(error => console.error("Erro ao baixar STL:", error));
+    };
 
-        // Configurando câmera
-        this.camera = new PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        this.camera.position.z = 5;
-
-        // Criando renderizador
-        this.renderer = new WebGLRenderer({ antialias: true });
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.container.appendChild(this.renderer.domElement);
-
-        // Criando um objeto simples (cubo)
-        this.createHeroObject();
-
-        // Adicionando luz
-        this.addLighting();
-
-        // Ajustando tamanho da tela dinamicamente
-        window.addEventListener('resize', () => this.onWindowResize());
-    }
-
-    // Cria um cubo básico para a cena
-    createHeroObject() {
-        const geometry = new BoxGeometry();
-        const material = new MeshStandardMaterial({ color: 0xff0000 });
-        this.heroObject = new Mesh(geometry, material);
-        this.scene.add(this.heroObject);
-    }
-
-    // Adiciona iluminação à cena
-    addLighting() {
-        const light = new DirectionalLight(0xffffff, 1);
-        light.position.set(1, 1, 1).normalize();
-        this.scene.add(light);
-    }
-
-    // Responsável pela renderização contínua da cena
-    animate() {
-        requestAnimationFrame(() => this.animate());
-
-        // Animação simples: girar o objeto
-        if (this.heroObject) {
-            this.heroObject.rotation.x += 0.01;
-            this.heroObject.rotation.y += 0.01;
-        }
-
-        this.renderer.render(this.scene, this.camera);
-    }
-
-    // Atualiza o tamanho da cena ao redimensionar a janela
-    onWindowResize() {
-        this.camera.aspect = window.innerWidth / window.innerHeight;
-        this.camera.updateProjectionMatrix();
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
-    }
-}
-
-// Inicializa o HeroSaver dentro de um container HTML com id "hero-container"
-document.addEventListener("DOMContentLoaded", () => {
-    new HeroSaver("hero-container");
-});
+    console.log("HeroSaver carregado. Use saveStl('URL_DO_STL') para baixar um STL.");
+})();
