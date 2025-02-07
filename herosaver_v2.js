@@ -1,6 +1,6 @@
 (() => {
     if (window.exportHighQualityModel) {
-        console.log("Script já carregado.");
+        console.log("HeroSaver já carregado.");
         return;
     }
 
@@ -23,22 +23,33 @@
         });
     }
 
-    function findActiveThreeScenes() {
-        const scenes = [];
+    function findViewerScene() {
+        let scenes = [];
         for (const key in window) {
             if (window[key] instanceof THREE.Scene) {
                 scenes.push(window[key]);
             }
         }
-        return scenes;
+        
+        if (scenes.length === 0) {
+            console.error("Nenhuma cena Three.js encontrada.");
+            return null;
+        }
+
+        if (scenes.length === 1) {
+            return scenes[0]; // Se houver só uma, retorna ela diretamente
+        }
+
+        console.warn(`Foram detectadas ${scenes.length} cenas. Tentando escolher a correta...`);
+        return scenes[scenes.length - 1]; // Tenta pegar a última carregada (geralmente a do visualizador)
     }
 
-    function applySkinnedMeshTransforms(scene) {
+    function freezeSkinnedMeshes(scene) {
         scene.traverse(object => {
             if (object.isSkinnedMesh) {
                 object.skeleton.update();
                 object.updateMatrixWorld(true);
-                
+
                 const tempGeometry = object.geometry.clone();
                 object.skeleton.bones.forEach(bone => {
                     bone.updateMatrixWorld(true);
@@ -56,6 +67,12 @@
     function exportSTL(scene, fileName) {
         const exporter = new THREE.STLExporter();
         const stlString = exporter.parse(scene);
+
+        if (!stlString) {
+            console.error("Erro: A exportação do STL falhou.");
+            alert("Erro ao exportar STL. O modelo pode estar vazio.");
+            return;
+        }
 
         const blob = new Blob([stlString], { type: "model/stl" });
         const link = document.createElement("a");
@@ -75,31 +92,21 @@
         }
 
         loadDependencies(() => {
-            let scenes = findActiveThreeScenes();
-            if (scenes.length === 0) {
-                console.error("Nenhuma cena Three.js encontrada.");
+            let scene = findViewerScene();
+            if (!scene) {
+                alert("Erro: Nenhuma cena válida foi encontrada.");
                 return;
             }
 
-            let selectedScene = scenes.length === 1 ? scenes[0] : prompt(`Foram detectadas ${scenes.length} cenas. Escolha um número de 0 a ${scenes.length - 1}:`);
-            selectedScene = scenes[selectedScene] || null;
+            freezeSkinnedMeshes(scene);
 
-            if (!selectedScene) {
-                console.error("Nenhuma cena válida foi selecionada.");
-                return;
-            }
-
-            applySkinnedMeshTransforms(selectedScene);
-
-            switch (format.toLowerCase()) {
-                case "stl":
-                    exportSTL(selectedScene, `${fileName}.stl`);
-                    break;
-                default:
-                    console.error("Formato não suportado.");
+            if (format.toLowerCase() === "stl") {
+                exportSTL(scene, `${fileName}.stl`);
+            } else {
+                alert("Formato não suportado.");
             }
         });
     };
 
-    console.log("Script carregado. Use exportHighQualityModel() para exportar modelos.");
+    console.log("HeroSaver carregado. Use exportHighQualityModel() para exportar modelos.");
 })();
