@@ -4,7 +4,6 @@
         return;
     }
 
-    // Carrega dependências necessárias
     function loadDependencies(callback) {
         const dependencies = [
             "https://threejs.org/examples/jsm/exporters/STLExporter.js",
@@ -24,87 +23,36 @@
         });
     }
 
-    // Extrai URLs de arquivos .ckb da cena
-    function extractCkbUrls(scene) {
-        const ckbUrls = new Set();
+    function findActiveThreeScenes() {
+        const scenes = [];
+        for (const key in window) {
+            if (window[key] instanceof THREE.Scene) {
+                scenes.push(window[key]);
+            }
+        }
+        return scenes;
+    }
 
+    function applySkinnedMeshTransforms(scene) {
         scene.traverse(object => {
-            if (object.isMesh && object.geometry) {
-                const geometryUrl = object.geometry.userData.url; // Verifica se há URL associada
-                if (geometryUrl && geometryUrl.endsWith(".ckb")) {
-                    ckbUrls.add(geometryUrl);
-                }
-            }
-        });
-
-        return Array.from(ckbUrls);
-    }
-
-    // Carrega um arquivo .ckb como geometria
-    async function loadCkbGeometry(url) {
-        try {
-            const response = await fetch(url);
-            const data = await response.arrayBuffer();
-            const loader = new THREE.BufferGeometryLoader();
-            const geometry = loader.parse(data);
-            geometry.userData.url = url; // Salva o URL para referência
-            return geometry;
-        } catch (error) {
-            console.error(`Erro ao carregar geometria de ${url}:`, error);
-            return null;
-        }
-    }
-
-    // Substitui geometrias da cena por versões carregadas de .ckb
-    async function upgradeSceneWithCkb(scene) {
-        const ckbUrls = extractCkbUrls(scene);
-
-        for (const url of ckbUrls) {
-            const geometry = await loadCkbGeometry(url);
-            if (geometry) {
-                scene.traverse(object => {
-                    if (object.isMesh && object.geometry.userData.url === url) {
-                        object.geometry = geometry; // Substitui a geometria
-                        console.log(`Geometria substituída: ${url}`);
-                    }
+            if (object.isSkinnedMesh) {
+                object.skeleton.update();
+                object.updateMatrixWorld(true);
+                
+                const tempGeometry = object.geometry.clone();
+                object.skeleton.bones.forEach(bone => {
+                    bone.updateMatrixWorld(true);
                 });
-            }
-        }
-    }
+                tempGeometry.applyMatrix4(object.matrixWorld);
 
-    // Clona uma cena e aplica transformações
-    function cloneScene(scene) {
-        const clonedScene = scene.clone();
-
-        // Clona todos os objetos e suas geometrias
-        clonedScene.traverse(object => {
-            if (object.isMesh) {
-                object.geometry = object.geometry.clone();
-                if (object.material) {
-                    object.material = object.material.clone();
-                }
+                object.geometry = tempGeometry;
+                object.position.set(0, 0, 0);
+                object.rotation.set(0, 0, 0);
+                object.scale.set(1, 1, 1);
             }
         });
-
-        return clonedScene;
     }
 
-    // Aplica transformações a todos os objetos
-    function applyTransforms(object) {
-        object.updateMatrixWorld(true);
-
-        if (object.isMesh) {
-            object.geometry.applyMatrix4(object.matrixWorld);
-            object.matrix.identity();
-            object.position.set(0, 0, 0);
-            object.rotation.set(0, 0, 0);
-            object.scale.set(1, 1, 1);
-        }
-
-        object.children?.forEach(child => applyTransforms(child));
-    }
-
-    // Exporta a cena para STL
     function exportSTL(scene, fileName) {
         const exporter = new THREE.STLExporter();
         const stlString = exporter.parse(scene);
@@ -120,81 +68,35 @@
         console.log("STL exportado com sucesso:", fileName);
     }
 
-    // Exporta a cena para OBJ
-    function exportOBJ(scene, fileName) {
-        const exporter = new THREE.OBJExporter();
-        const objString = exporter.parse(scene);
-
-        const blob = new Blob([objString], { type: "model/obj" });
-        const link = document.createElement("a");
-        link.href = URL.createObjectURL(blob);
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-
-        console.log("OBJ exportado com sucesso:", fileName);
-    }
-
-    // Exporta a cena para GLTF
-    function exportGLTF(scene, fileName) {
-        const exporter = new THREE.GLTFExporter();
-        exporter.parse(scene, gltf => {
-            const blob = new Blob([JSON.stringify(gltf)], { type: "model/gltf+json" });
-            const link = document.createElement("a");
-            link.href = URL.createObjectURL(blob);
-            link.download = fileName;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-
-            console.log("GLTF exportado com sucesso:", fileName);
-        });
-    }
-
-    // Função principal para exportar modelos
-    window.exportHighQualityModel = async function (format = "stl", fileName = "modelo") {
+    window.exportHighQualityModel = function (format = "stl", fileName = "modelo") {
         if (!window.THREE) {
             console.error("Three.js não encontrado.");
             return;
         }
 
-        loadDependencies(async () => {
-            let scene = null;
-
-            // Tenta encontrar a cena
-            for (const key in window) {
-                if (window[key] instanceof THREE.Scene) {
-                    scene = window[key];
-                    break;
-                }
-            }
-
-            if (!scene) {
-                console.error("Cena não encontrada.");
+        loadDependencies(() => {
+            let scenes = findActiveThreeScenes();
+            if (scenes.length === 0) {
+                console.error("Nenhuma cena Three.js encontrada.");
                 return;
             }
 
-            // Carrega e substitui geometrias de .ckb
-            await upgradeSceneWithCkb(scene);
+            let selectedScene = scenes.length === 1 ? scenes[0] : prompt(`Foram detectadas ${scenes.length} cenas. Escolha um número de 0 a ${scenes.length - 1}:`);
+            selectedScene = scenes[selectedScene] || null;
 
-            // Clona a cena e aplica transformações
-            const clonedScene = cloneScene(scene);
-            clonedScene.traverse(applyTransforms);
+            if (!selectedScene) {
+                console.error("Nenhuma cena válida foi selecionada.");
+                return;
+            }
 
-            // Exporta no formato especificado
+            applySkinnedMeshTransforms(selectedScene);
+
             switch (format.toLowerCase()) {
                 case "stl":
-                    exportSTL(clonedScene, `${fileName}.stl`);
-                    break;
-                case "obj":
-                    exportOBJ(clonedScene, `${fileName}.obj`);
-                    break;
-                case "gltf":
-                    exportGLTF(clonedScene, `${fileName}.gltf`);
+                    exportSTL(selectedScene, `${fileName}.stl`);
                     break;
                 default:
-                    console.error("Formato não suportado. Use 'stl', 'obj' ou 'gltf'.");
+                    console.error("Formato não suportado.");
             }
         });
     };
