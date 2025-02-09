@@ -4,15 +4,22 @@
         return;
     }
 
-    function loadSTLExporter(callback) {
-        if (window.THREE?.STLExporter) {
-            callback();
-        } else {
+    function loadDependencies(callback) {
+        const dependencies = [
+            "https://threejs.org/examples/jsm/exporters/STLExporter.js",
+            "https://threejs.org/examples/jsm/modifiers/SubdivisionModifier.js"
+        ];
+
+        let loaded = 0;
+        dependencies.forEach(src => {
             const script = document.createElement("script");
-            script.src = "https://threejs.org/examples/jsm/exporters/STLExporter.js";
-            script.onload = callback;
+            script.src = src;
+            script.onload = () => {
+                loaded++;
+                if (loaded === dependencies.length) callback();
+            };
             document.body.appendChild(script);
-        }
+        });
     }
 
     function applyTransforms(object) {
@@ -31,13 +38,25 @@
         object.children?.forEach(child => applyTransforms(child));
     }
 
-    window.saveStl = function (fileName = "modelo.stl", scene = null) {
+    function improveMeshQuality(mesh, subdivisions = 2) {
+        if (!window.THREE.SubdivisionModifier) {
+            console.warn("SubdivisionModifier não carregado. A qualidade não será melhorada.");
+            return;
+        }
+
+        const modifier = new THREE.SubdivisionModifier(subdivisions);
+        const geometry = mesh.geometry.clone();
+        modifier.modify(geometry);
+        mesh.geometry = geometry;
+    }
+
+    window.saveStl = function (fileName = "modelo.stl", scene = null, subdivisions = 2) {
         if (!window.THREE) {
             console.error("Three.js não encontrado.");
             return;
         }
 
-        loadSTLExporter(() => {
+        loadDependencies(() => {
             // Tenta encontrar a cena se não for fornecida
             if (!scene) {
                 for (const key in window) {
@@ -53,9 +72,18 @@
                 return;
             }
 
+            // Clona a cena para evitar modificar a original
             const clonedScene = scene.clone();
-            clonedScene.traverse(applyTransforms);
 
+            // Aplica transformações e melhora a qualidade da malha
+            clonedScene.traverse(object => {
+                if (object.isMesh) {
+                    applyTransforms(object);
+                    if (subdivisions > 0) improveMeshQuality(object, subdivisions);
+                }
+            });
+
+            // Exporta para STL
             const exporter = new THREE.STLExporter();
             const stlString = exporter.parse(clonedScene);
 
@@ -66,6 +94,8 @@
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+
+            console.log("STL exportado com sucesso:", fileName);
         });
     };
 
