@@ -5,7 +5,7 @@
     }
 
     function loadSTLExporter(callback) {
-        if (window.THREE && window.THREE.STLExporter) {
+        if (window.THREE?.STLExporter) {
             callback();
         } else {
             const script = document.createElement("script");
@@ -16,45 +16,45 @@
     }
 
     function applyTransforms(object) {
-        object.updateMatrixWorld(true); // Atualiza todas as matrizes na cena
+        object.updateMatrixWorld(true);
 
         if (object.isMesh) {
-            object.geometry.applyMatrix4(object.matrixWorld); // Aplica posição, rotação e escala na geometria
-            object.matrix.identity(); // Reseta a matriz do objeto para evitar transformações duplas
+            // Clona a geometria para evitar afetar outras instâncias
+            object.geometry = object.geometry.clone();
+            object.geometry.applyMatrix4(object.matrixWorld);
+            object.matrix.identity();
             object.position.set(0, 0, 0);
             object.rotation.set(0, 0, 0);
             object.scale.set(1, 1, 1);
         }
 
-        // Se o objeto tem filhos, aplica as transformações recursivamente
-        if (object.children.length > 0) {
-            object.children.forEach(child => applyTransforms(child));
-        }
+        object.children?.forEach(child => applyTransforms(child));
     }
 
-    window.saveStl = function (fileName = "modelo.stl") {
+    window.saveStl = function (fileName = "modelo.stl", scene = null) {
         if (!window.THREE) {
-            console.error("Three.js não encontrado na página.");
+            console.error("Three.js não encontrado.");
             return;
         }
 
         loadSTLExporter(() => {
-            let scene = null;
-            for (let key in window) {
-                if (window[key] && window[key] instanceof THREE.Scene) {
-                    scene = window[key];
-                    break;
+            // Tenta encontrar a cena se não for fornecida
+            if (!scene) {
+                for (const key in window) {
+                    if (window[key] instanceof THREE.Scene) {
+                        scene = window[key];
+                        break;
+                    }
                 }
             }
 
             if (!scene) {
-                console.error("Cena Three.js não encontrada.");
-                alert("Erro: Nenhuma cena Three.js foi detectada.");
+                alert("Erro: Cena não encontrada.");
                 return;
             }
 
-            const clonedScene = scene.clone(); // Evita modificar a cena original
-            clonedScene.traverse(applyTransforms); // Aplica transformações a todos os objetos
+            const clonedScene = scene.clone();
+            clonedScene.traverse(applyTransforms);
 
             const exporter = new THREE.STLExporter();
             const stlString = exporter.parse(clonedScene);
@@ -66,10 +66,8 @@
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-
-            console.log("STL exportado com sucesso:", fileName);
         });
     };
 
-    console.log("HeroSaver carregado. Use saveStl() para baixar o STL da cena.");
+    console.log("HeroSaver carregado. Use saveStl() para exportar.");
 })();
