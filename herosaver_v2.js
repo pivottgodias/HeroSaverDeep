@@ -4,8 +4,23 @@
         return;
     }
 
+    function findThreeJS() {
+        if (window.THREE) return window.THREE; // Se já estiver disponível, usa diretamente
+
+        for (const key in window) {
+            if (window[key] && window[key].WebGLRenderer && window[key].Scene) {
+                console.log(`Three.js encontrado dentro de ${key}`);
+                return window[key]; // Retorna o Three.js encontrado dentro de outro objeto
+            }
+        }
+
+        return null;
+    }
+
     function waitForThreeJS(callback, retries = 10) {
-        if (window.THREE) {
+        const THREE = findThreeJS();
+        if (THREE) {
+            window.THREE = THREE; // Define globalmente para garantir compatibilidade
             callback();
         } else if (retries > 0) {
             console.warn("Three.js não encontrado. Tentando novamente...");
