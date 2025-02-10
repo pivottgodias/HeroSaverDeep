@@ -4,122 +4,39 @@
         return;
     }
 
-    function findThreeJS() {
-        if (window.THREE) return window.THREE; // Se já estiver disponível, usa diretamente
+    let capturedScene = null;
+    let capturedRenderer = null;
 
-        for (const key in window) {
-            if (window[key] && window[key].WebGLRenderer && window[key].Scene) {
-                console.log(`Three.js encontrado dentro de ${key}`);
-                return window[key]; // Retorna o Three.js encontrado dentro de outro objeto
-            }
-        }
+    // Intercepta a criação do WebGLRenderer para capturar a cena e o contexto
+    const originalWebGLRenderer = window.THREE?.WebGLRenderer || Object.values(window).find(obj => obj?.WebGLRenderer)?.WebGLRenderer;
 
-        return null;
-    }
+    if (originalWebGLRenderer) {
+        window.THREE.WebGLRenderer = function (...args) {
+            const renderer = new originalWebGLRenderer(...args);
+            capturedRenderer = renderer;
 
-    function waitForThreeJS(callback, retries = 10) {
-        const THREE = findThreeJS();
-        if (THREE) {
-            window.THREE = THREE; // Define globalmente para garantir compatibilidade
-            callback();
-        } else if (retries > 0) {
-            console.warn("Three.js não encontrado. Tentando novamente...");
-            setTimeout(() => waitForThreeJS(callback, retries - 1), 1000);
-        } else {
-            alert("Erro: Three.js não foi encontrado na página.");
-        }
-    }
+            setTimeout(() => {
+                let scenes = Object.values(window).filter(obj => obj instanceof THREE.Scene);
+                if (scenes.length > 0) {
+                    capturedScene = scenes[scenes.length - 1]; // Última cena detectada
+                    console.log("🎯 Cena capturada:", capturedScene);
+                } else {
+                    console.warn("⚠ Nenhuma cena encontrada ainda. Tentando novamente...");
+                }
+            }, 3000); // Aguarda 3 segundos para garantir que a cena esteja pronta
 
-    function loadDependencies(callback) {
-        const dependencies = [
-            "https://threejs.org/examples/jsm/exporters/STLExporter.js",
-            "https://threejs.org/examples/jsm/exporters/OBJExporter.js",
-            "https://threejs.org/examples/jsm/exporters/GLTFExporter.js"
-        ];
-
-        let loaded = 0;
-        dependencies.forEach(src => {
-            const script = document.createElement("script");
-            script.src = src;
-            script.onload = () => {
-                loaded++;
-                if (loaded === dependencies.length) callback();
-            };
-            document.body.appendChild(script);
-        });
-    }
-
-    function findViewerScene() {
-        let scenes = [];
-        for (const key in window) {
-            if (window[key] instanceof THREE.Scene) {
-                scenes.push(window[key]);
-            }
-        }
-        
-        if (scenes.length === 0) {
-            console.error("Nenhuma cena Three.js encontrada.");
-            return null;
-        }
-
-        return scenes[scenes.length - 1]; // Pega a última carregada (geralmente a do visualizador)
-    }
-
-    function freezeSkinnedMeshes(scene) {
-        scene.traverse(object => {
-            if (object.isSkinnedMesh) {
-                object.skeleton.update();
-                object.updateMatrixWorld(true);
-
-                const tempGeometry = object.geometry.clone();
-                object.skeleton.bones.forEach(bone => {
-                    bone.updateMatrixWorld(true);
-                });
-                tempGeometry.applyMatrix4(object.matrixWorld);
-
-                object.geometry = tempGeometry;
-                object.position.set(0, 0, 0);
-                object.rotation.set(0, 0, 0);
-                object.scale.set(1, 1, 1);
-            }
-        });
-    }
-
-    function collectTextures(scene) {
-        let textures = new Set();
-
-        scene.traverse(object => {
-            if (object.isMesh && object.material) {
-                let material = object.material;
-                
-                ["map", "normalMap", "roughnessMap", "metalnessMap", "emissiveMap"].forEach(mapType => {
-                    if (material[mapType] && material[mapType].image) {
-                        textures.add(material[mapType].image.src);
-                    }
-                });
-            }
-        });
-
-        return Array.from(textures);
-    }
-
-    function downloadTextures(textureUrls) {
-        textureUrls.forEach(url => {
-            fetch(url)
-                .then(response => response.blob())
-                .then(blob => {
-                    const link = document.createElement("a");
-                    link.href = URL.createObjectURL(blob);
-                    link.download = url.split('/').pop();
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                })
-                .catch(error => console.error("Erro ao baixar textura:", error));
-        });
+            return renderer;
+        };
+    } else {
+        console.error("❌ Erro: Não foi possível interceptar o WebGLRenderer.");
     }
 
     function exportGLTF(scene, fileName) {
+        if (!scene) {
+            alert("Erro: Nenhuma cena foi capturada ainda. Aguarde alguns segundos e tente novamente.");
+            return;
+        }
+
         const exporter = new THREE.GLTFExporter();
         exporter.parse(scene, gltf => {
             const blob = new Blob([JSON.stringify(gltf)], { type: "model/gltf+json" });
@@ -129,38 +46,17 @@
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-            
-            console.log("GLTF exportado com sucesso:", fileName);
+            console.log("✅ GLTF exportado com sucesso:", fileName);
         }, { binary: false });
     }
 
-    window.exportHighQualityModel = function (format = "gltf", fileName = "modelo") {
-        waitForThreeJS(() => {
-            loadDependencies(() => {
-                let scene = findViewerScene();
-                if (!scene) {
-                    alert("Erro: Nenhuma cena válida foi encontrada.");
-                    return;
-                }
-
-                freezeSkinnedMeshes(scene);
-                
-                let textureUrls = collectTextures(scene);
-                if (textureUrls.length > 0) {
-                    console.log("Baixando texturas...");
-                    downloadTextures(textureUrls);
-                } else {
-                    console.warn("Nenhuma textura foi encontrada na cena.");
-                }
-
-                if (format.toLowerCase() === "gltf") {
-                    exportGLTF(scene, fileName);
-                } else {
-                    alert("Formato não suportado para texturas. Use GLTF para manter materiais e texturas.");
-                }
-            });
-        });
+    window.exportHighQualityModel = function () {
+        if (!capturedScene) {
+            alert("Erro: Nenhuma cena foi capturada ainda. Aguarde alguns segundos e tente novamente.");
+            return;
+        }
+        exportGLTF(capturedScene, "heroforge_model");
     };
 
-    console.log("HeroSaver atualizado. Agora suporta texturas!");
+    console.log("✅ HeroSaver aguardando a cena do HeroForge... Rode `exportHighQualityModel()` após alguns segundos.");
 })();
