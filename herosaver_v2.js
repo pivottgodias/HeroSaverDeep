@@ -1,5 +1,5 @@
 (() => {
-    if (window.saveStl) {
+    if (window.exportHighQualityModel) {
         console.log("HeroSaver já carregado.");
         return;
     }
@@ -7,7 +7,8 @@
     function loadDependencies(callback) {
         const dependencies = [
             "https://threejs.org/examples/jsm/exporters/STLExporter.js",
-            "https://threejs.org/examples/jsm/modifiers/SubdivisionModifier.js"
+            "https://threejs.org/examples/jsm/exporters/OBJExporter.js",
+            "https://threejs.org/examples/jsm/exporters/GLTFExporter.js"
         ];
 
         let loaded = 0;
@@ -22,95 +23,124 @@
         });
     }
 
-    function applyTransforms(object) {
-        object.updateMatrixWorld(true);
-
-        if (object.isMesh) {
-            // Clona a geometria para evitar afetar outras instâncias
-            object.geometry = object.geometry.clone();
-            object.geometry.applyMatrix4(object.matrixWorld);
-            object.matrix.identity();
-            object.position.set(0, 0, 0);
-            object.rotation.set(0, 0, 0);
-            object.scale.set(1, 1, 1);
+    function findViewerScene() {
+        let scenes = [];
+        for (const key in window) {
+            if (window[key] instanceof THREE.Scene) {
+                scenes.push(window[key]);
+            }
+        }
+        
+        if (scenes.length === 0) {
+            console.error("Nenhuma cena Three.js encontrada.");
+            return null;
         }
 
-        object.children?.forEach(child => applyTransforms(child));
+        return scenes[scenes.length - 1]; // Pega a última carregada (geralmente a do visualizador)
     }
 
-    function improveMeshQuality(mesh, subdivisions = 2) {
-        if (!window.THREE.SubdivisionModifier) {
-            console.warn("SubdivisionModifier não carregado. A qualidade não será melhorada.");
-            return;
-        }
+    function freezeSkinnedMeshes(scene) {
+        scene.traverse(object => {
+            if (object.isSkinnedMesh) {
+                object.skeleton.update();
+                object.updateMatrixWorld(true);
 
-        const modifier = new THREE.SubdivisionModifier(subdivisions);
-        const geometry = mesh.geometry.clone();
-        modifier.modify(geometry);
-        mesh.geometry = geometry;
+                const tempGeometry = object.geometry.clone();
+                object.skeleton.bones.forEach(bone => {
+                    bone.updateMatrixWorld(true);
+                });
+                tempGeometry.applyMatrix4(object.matrixWorld);
+
+                object.geometry = tempGeometry;
+                object.position.set(0, 0, 0);
+                object.rotation.set(0, 0, 0);
+                object.scale.set(1, 1, 1);
+            }
+        });
     }
 
-    function cloneScene(scene) {
-        const clonedScene = scene.clone();
+    function collectTextures(scene) {
+        let textures = new Set();
 
-        // Clona todos os objetos e suas geometrias
-        clonedScene.traverse(object => {
-            if (object.isMesh) {
-                object.geometry = object.geometry.clone();
+        scene.traverse(object => {
+            if (object.isMesh && object.material) {
+                let material = object.material;
+                
+                // Verifica se o material possui texturas associadas
+                ["map", "normalMap", "roughnessMap", "metalnessMap", "emissiveMap"].forEach(mapType => {
+                    if (material[mapType] && material[mapType].image) {
+                        textures.add(material[mapType].image.src);
+                    }
+                });
             }
         });
 
-        return clonedScene;
+        return Array.from(textures);
     }
 
-    window.saveStl = function (fileName = "modelo.stl", scene = null, subdivisions = 2) {
+    function downloadTextures(textureUrls) {
+        textureUrls.forEach(url => {
+            fetch(url)
+                .then(response => response.blob())
+                .then(blob => {
+                    const link = document.createElement("a");
+                    link.href = URL.createObjectURL(blob);
+                    link.download = url.split('/').pop();
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                })
+                .catch(error => console.error("Erro ao baixar textura:", error));
+        });
+    }
+
+    function exportGLTF(scene, fileName) {
+        const exporter = new THREE.GLTFExporter();
+        exporter.parse(scene, gltf => {
+            const blob = new Blob([JSON.stringify(gltf)], { type: "model/gltf+json" });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = fileName + ".gltf";
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            console.log("GLTF exportado com sucesso:", fileName);
+        }, { binary: false });
+    }
+
+    window.exportHighQualityModel = function (format = "gltf", fileName = "modelo") {
         if (!window.THREE) {
             console.error("Three.js não encontrado.");
             return;
         }
 
         loadDependencies(() => {
-            // Tenta encontrar a cena se não for fornecida
+            let scene = findViewerScene();
             if (!scene) {
-                for (const key in window) {
-                    if (window[key] instanceof THREE.Scene) {
-                        scene = window[key];
-                        break;
-                    }
-                }
-            }
-
-            if (!scene) {
-                alert("Erro: Cena não encontrada.");
+                alert("Erro: Nenhuma cena válida foi encontrada.");
                 return;
             }
 
-            // Clona a cena de forma profunda
-            const clonedScene = cloneScene(scene);
+            freezeSkinnedMeshes(scene);
+            
+            // Captura e baixa as texturas
+            let textureUrls = collectTextures(scene);
+            if (textureUrls.length > 0) {
+                console.log("Baixando texturas...");
+                downloadTextures(textureUrls);
+            } else {
+                console.warn("Nenhuma textura foi encontrada na cena.");
+            }
 
-            // Aplica transformações e melhora a qualidade da malha
-            clonedScene.traverse(object => {
-                if (object.isMesh) {
-                    applyTransforms(object);
-                    if (subdivisions > 0) improveMeshQuality(object, subdivisions);
-                }
-            });
-
-            // Exporta para STL
-            const exporter = new THREE.STLExporter();
-            const stlString = exporter.parse(clonedScene);
-
-            const blob = new Blob([stlString], { type: "model/stl" });
-            const link = document.createElement("a");
-            link.href = URL.createObjectURL(blob);
-            link.download = fileName;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-
-            console.log("STL exportado com sucesso:", fileName);
+            // Exportação
+            if (format.toLowerCase() === "gltf") {
+                exportGLTF(scene, fileName);
+            } else {
+                alert("Formato não suportado para texturas. Use GLTF para manter materiais e texturas.");
+            }
         });
     };
 
-    console.log("HeroSaver carregado. Use saveStl() para exportar.");
+    console.log("HeroSaver atualizado. Agora suporta texturas!");
 })();
