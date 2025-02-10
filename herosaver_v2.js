@@ -50,6 +50,19 @@
         mesh.geometry = geometry;
     }
 
+    function cloneScene(scene) {
+        const clonedScene = scene.clone();
+
+        // Clona todos os objetos e suas geometrias
+        clonedScene.traverse(object => {
+            if (object.isMesh) {
+                object.geometry = object.geometry.clone();
+            }
+        });
+
+        return clonedScene;
+    }
+
     window.saveStl = function (fileName = "modelo.stl", scene = null, subdivisions = 2) {
         if (!window.THREE) {
             console.error("Three.js não encontrado.");
@@ -72,8 +85,8 @@
                 return;
             }
 
-            // Clona a cena para evitar modificar a original
-            const clonedScene = scene.clone();
+            // Clona a cena de forma profunda
+            const clonedScene = cloneScene(scene);
 
             // Aplica transformações e melhora a qualidade da malha
             clonedScene.traverse(object => {
