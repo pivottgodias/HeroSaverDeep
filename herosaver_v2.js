@@ -4,6 +4,17 @@
         return;
     }
 
+    function waitForThreeJS(callback, retries = 10) {
+        if (window.THREE) {
+            callback();
+        } else if (retries > 0) {
+            console.warn("Three.js não encontrado. Tentando novamente...");
+            setTimeout(() => waitForThreeJS(callback, retries - 1), 1000);
+        } else {
+            alert("Erro: Three.js não foi encontrado na página.");
+        }
+    }
+
     function loadDependencies(callback) {
         const dependencies = [
             "https://threejs.org/examples/jsm/exporters/STLExporter.js",
@@ -66,7 +77,6 @@
             if (object.isMesh && object.material) {
                 let material = object.material;
                 
-                // Verifica se o material possui texturas associadas
                 ["map", "normalMap", "roughnessMap", "metalnessMap", "emissiveMap"].forEach(mapType => {
                     if (material[mapType] && material[mapType].image) {
                         textures.add(material[mapType].image.src);
@@ -110,35 +120,30 @@
     }
 
     window.exportHighQualityModel = function (format = "gltf", fileName = "modelo") {
-        if (!window.THREE) {
-            console.error("Three.js não encontrado.");
-            return;
-        }
+        waitForThreeJS(() => {
+            loadDependencies(() => {
+                let scene = findViewerScene();
+                if (!scene) {
+                    alert("Erro: Nenhuma cena válida foi encontrada.");
+                    return;
+                }
 
-        loadDependencies(() => {
-            let scene = findViewerScene();
-            if (!scene) {
-                alert("Erro: Nenhuma cena válida foi encontrada.");
-                return;
-            }
+                freezeSkinnedMeshes(scene);
+                
+                let textureUrls = collectTextures(scene);
+                if (textureUrls.length > 0) {
+                    console.log("Baixando texturas...");
+                    downloadTextures(textureUrls);
+                } else {
+                    console.warn("Nenhuma textura foi encontrada na cena.");
+                }
 
-            freezeSkinnedMeshes(scene);
-            
-            // Captura e baixa as texturas
-            let textureUrls = collectTextures(scene);
-            if (textureUrls.length > 0) {
-                console.log("Baixando texturas...");
-                downloadTextures(textureUrls);
-            } else {
-                console.warn("Nenhuma textura foi encontrada na cena.");
-            }
-
-            // Exportação
-            if (format.toLowerCase() === "gltf") {
-                exportGLTF(scene, fileName);
-            } else {
-                alert("Formato não suportado para texturas. Use GLTF para manter materiais e texturas.");
-            }
+                if (format.toLowerCase() === "gltf") {
+                    exportGLTF(scene, fileName);
+                } else {
+                    alert("Formato não suportado para texturas. Use GLTF para manter materiais e texturas.");
+                }
+            });
         });
     };
 
