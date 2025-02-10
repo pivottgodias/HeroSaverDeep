@@ -1,88 +1,75 @@
-(async function() {
-    console.log('🔍 Iniciando HeroSaver...');
-
-    async function extractScene() {
-        return new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.textContent = `(() => {
-                const scene = window.THREE && window.THREE.Scene ? window.THREE.Scene : null;
-                if (scene) {
-                    window.postMessage({ type: 'SCENE_DATA', scene: JSON.stringify(scene) }, '*');
-                }
-            })();`;
-            document.documentElement.appendChild(script);
-            script.remove();
-
-            window.addEventListener('message', (event) => {
-                if (event.data.type === 'SCENE_DATA') {
-                    resolve(JSON.parse(event.data.scene));
-                }
-            });
-        });
+(() => {
+    if (window.saveStl) {
+        console.log("HeroSaver já carregado.");
+        return;
     }
 
-    function downloadFile(data, filename, type) {
-        const blob = new Blob([data], { type });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    }
-
-    async function exportModel(scene) {
-        return new Promise((resolve, reject) => {
-            try {
-                const exporter = new THREE.GLTFExporter();
-                exporter.parse(scene, (gltf) => {
-                    const json = JSON.stringify(gltf);
-                    downloadFile(json, 'heroforge_model.glb', 'application/octet-stream');
-                    resolve();
-                });
-            } catch (error) {
-                reject(error);
-            }
-        });
-    }
-
-    async function downloadTextures(scene) {
-        return new Promise((resolve, reject) => {
-            try {
-                const textures = scene.materials.map((mat) => mat.map);
-                textures.forEach((tex, index) => {
-                    if (tex && tex.image) {
-                        const link = document.createElement('a');
-                        link.href = tex.image.src;
-                        link.download = `texture_${index}.png`;
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                    }
-                });
-                resolve();
-            } catch (error) {
-                reject(error);
-            }
-        });
-    }
-
-    async function main() {
-        try {
-            console.log('🎮 Capturando a cena do HeroForge...');
-            const sceneData = await extractScene();
-
-            console.log('📦 Exportando modelo...');
-            await exportModel(sceneData);
-
-            console.log('🎨 Baixando texturas...');
-            await downloadTextures(sceneData);
-
-            console.log('✅ Exportação concluída!');
-        } catch (error) {
-            console.error('❌ Erro:', error);
+    function loadSTLExporter(callback) {
+        if (window.THREE && window.THREE.STLExporter) {
+            callback();
+        } else {
+            const script = document.createElement("script");
+            script.src = "https://threejs.org/examples/jsm/exporters/STLExporter.js";
+            script.onload = callback;
+            document.body.appendChild(script);
         }
     }
 
-    main();
+    function applyTransforms(object) {
+        object.updateMatrixWorld(true); // Atualiza todas as matrizes na cena
+
+        if (object.isMesh) {
+            object.geometry.applyMatrix4(object.matrixWorld); // Aplica posição, rotação e escala na geometria
+            object.matrix.identity(); // Reseta a matriz do objeto para evitar transformações duplas
+            object.position.set(0, 0, 0);
+            object.rotation.set(0, 0, 0);
+            object.scale.set(1, 1, 1);
+        }
+
+        // Se o objeto tem filhos, aplica as transformações recursivamente
+        if (object.children.length > 0) {
+            object.children.forEach(child => applyTransforms(child));
+        }
+    }
+
+    window.saveStl = function (fileName = "modelo.stl") {
+        if (!window.THREE) {
+            console.error("Three.js não encontrado na página.");
+            return;
+        }
+
+        loadSTLExporter(() => {
+            let scene = null;
+            for (let key in window) {
+                if (window[key] && window[key] instanceof THREE.Scene) {
+                    scene = window[key];
+                    break;
+                }
+            }
+
+            if (!scene) {
+                console.error("Cena Three.js não encontrada.");
+                alert("Erro: Nenhuma cena Three.js foi detectada.");
+                return;
+            }
+
+            const clonedScene = scene.clone(); // Evita modificar a cena original
+            clonedScene.traverse(applyTransforms); // Aplica transformações a todos os objetos
+
+            const exporter = new THREE.STLExporter();
+            const stlString = exporter.parse(clonedScene);
+
+            const blob = new Blob([stlString], { type: "model/stl" });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            console.log("STL exportado com sucesso:", fileName);
+        });
+    };
+
+    console.log("HeroSaver carregado. Use saveStl() para baixar o STL da cena.");
 })();
